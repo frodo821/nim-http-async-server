@@ -44,6 +44,7 @@ type
 
 ################# Utility Procs #################
 proc `@@`*(this: openArray[(string, seq[string])]): HttpHeaders =
+  ## convert key-value pair to HttpHeaders object
   result = new HttpHeaders
   result.table = this.newTable
 
@@ -53,10 +54,33 @@ proc createServer*(
   reuseAddr = true,
   reusePort = true,
   address: string = "0.0.0.0",
-  port = 8080,
-  maxHandlers: 1..65535 = 100,
-  maxSize = 131072
+  port: 1..65535 = 8080,
+  maxHandlers = 100, # maximum number of simulataneous requests
+  maxSize = 131072 # maximum size of request body
 ): AsyncHttpServer =
+  ## create an AsyncHttpServer
+  ## 
+  ## Example:
+  ## 
+  ## .. code-block::nim
+  ##    import times
+  ##    
+  ##    let server = createServer(port=5555, maxHandlers = 10000)
+  ##    let formatter = initTimeFormat "ddd, dd MMM YYYY HH:mm:ss 'GMT'"
+  ##    
+  ##    proc cb(req: Request, res: Response) {.async, gcsafe.} =
+  ##      await res
+  ##       .status(Http200)
+  ##       .header("Content-type", "text/plain; charset=utf-8")
+  ##       .header("Date", now().format(formatter))
+  ##       .send("Hello World")
+  ##    
+  ##    proc main =
+  ##      var server = createServer()
+  ##      asyncCheck server.serve(cb)
+  ##      runForever()
+  ##    
+  ##    main()
 
   new result
   result.maxHandlers = maxHandlers
@@ -327,14 +351,15 @@ proc processClient(
   callback: RequestHandler
 ) {.async.} =
 
-  while not client.isClosed:
-    let retry = await processRequest(
-      server, req, res, client, address, callback
-    )
-    if not retry: break
-
-  server.finalizeRequest req.mget
-  server.finalizeResponse res.mget
+  try:
+    while not client.isClosed:
+      let retry = await processRequest(
+        server, req, res, client, address, callback
+      )
+      if not retry: break
+  finally:
+    server.finalizeRequest(req.mget)
+    server.finalizeResponse(res.mget)
 
 proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
   server.socket = newAsyncSocket()
@@ -380,7 +405,7 @@ when not defined(testing) and isMainModule:
       .send("Hello World")
 
   proc main =
-    var server = createServer()
+    var server = createServer(maxHandlers = 100000)
     asyncCheck server.serve(cb)
     runForever()
 
