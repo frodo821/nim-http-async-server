@@ -91,7 +91,7 @@ proc createServer*(
   result.requestPool = newSeq[Request](maxHandlers)
   result.responsePool = newSeq[Response](maxHandlers)
 
-  for _ in 0..maxHandlers:
+  for _ in 1..maxHandlers:
     let req = new Request
     req.initialized = false
     req.headers = newHttpHeaders()
@@ -361,7 +361,6 @@ proc processClient(
   finally:
     server.finalizeRequest(req.mget)
     server.finalizeResponse(res.mget)
-    echo $server.requestPool.len
 
 proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
   server.socket = newAsyncSocket()
