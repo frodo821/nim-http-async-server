@@ -111,6 +111,7 @@ proc newRequest(server: AsyncHttpServer): Request =
 proc finalizeRequest(server: AsyncHttpServer, request: Request): void =
   request.initialized = false
   request.headers.clear
+  server.requestPool.add request
 
 proc newResponse(server: AsyncHttpServer): Response =
   if server.responsePool.len < 1:
@@ -360,6 +361,7 @@ proc processClient(
   finally:
     server.finalizeRequest(req.mget)
     server.finalizeResponse(res.mget)
+    echo $server.requestPool.len
 
 proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
   server.socket = newAsyncSocket()
