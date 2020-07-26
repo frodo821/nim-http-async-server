@@ -1,10 +1,11 @@
 import tables, asyncnet, asyncdispatch, parseutils, uri, strutils, options
-import httpcore
+import httpcore, times
 from math import `^`
 
 export httpcore except parseHeader
 
 const maxLineLength = 2 ^ 16
+const timeFormatter = initTimeFormat "ddd, dd MMM YYYY HH:mm:ss 'GMT'"
 
 type
   Request* = ref object
@@ -34,7 +35,7 @@ type
     requestPool: seq[Request]
     responsePool: seq[Response]
     socket: AsyncSocket
-  
+
   RequestLine = tuple
     reqMethod: HttpMethod
     path: Uri
@@ -91,7 +92,7 @@ proc createServer*(
   result.requestPool = newSeq[Request](maxHandlers)
   result.responsePool = newSeq[Response](maxHandlers)
 
-  for _ in 1..maxHandlers:
+  for _ in 0..maxHandlers:
     let req = new Request
     req.initialized = false
     req.headers = newHttpHeaders()
@@ -152,6 +153,8 @@ proc send*(response: Response, content: string, markAsSent: bool = true): Future
 
   if content.len > 0:
     response.headers.add("Content-Length", $content.len)
+  response.headers.add("Server", "Nim/" & NimVersion)
+  response.headers.add("Date", now().utc.format(timeFormatter))
   msg.add response.headers.createHeaderFields()
   msg.add content
   response.sent = markAsSent
@@ -331,7 +334,7 @@ proc processRequest(
 
   await callback(request, response)
 
-  if "upgrade" in request.headers.getOrDefault("Connection"):
+  if cmpIgnoreCase(request.headers.getOrDefault("Connection"), "upgrade") == 0:
     return false
 
   if (request.protocol == HttpVer11 and
@@ -361,6 +364,19 @@ proc processClient(
   finally:
     server.finalizeRequest(req.mget)
     server.finalizeResponse(res.mget)
+    echo $server.requestPool.len
+
+proc temporarilyUnavailable(client: AsyncSocket) {.async.} =
+  await client.send("""HTTP/1.1 503 Service Temporarily Unavailable
+Content-Type: text/plain; charset=utf-8
+Date: $#
+Server: Nim/$#
+Content-Length: 32
+Content-Type: text/plain; charset=utf-8
+
+Service Temporarily Unavailable
+""" % [$now().utc.format(timeFormatter), NimVersion])
+  client.close()
 
 proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
   server.socket = newAsyncSocket()
@@ -380,6 +396,10 @@ proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
     let response = newFutureVar[Response]()
     response.complete server.newResponse()
 
+    if request.mget.isNil or response.mget.isNil:
+      asyncCheck client.temporarilyUnavailable
+      continue
+
     asyncCheck processClient(
       server,
       client,
@@ -394,15 +414,10 @@ proc close*(server: AsyncHttpServer) =
   server.responsePool.setLen(0)
 
 when not defined(testing) and isMainModule:
-  import times
-
-  let formatter = initTimeFormat "ddd, dd MMM YYYY HH:mm:ss 'GMT'"
-
   proc cb(req: Request, res: Response) {.async, gcsafe.} =
     await res
       .status(Http200)
       .header("Content-type", "text/plain; charset=utf-8")
-      .header("Date", now().format(formatter))
       .send("Hello World")
 
   proc main =
