@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.1"
+version       = "0.1.2"
 author        = "frodo821"
 description   = "Asynchronous HTTP server library"
 license       = "MIT"

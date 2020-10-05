@@ -49,6 +49,12 @@ proc `@@`*(this: openArray[(string, seq[string])]): HttpHeaders =
   result = new HttpHeaders
   result.table = this.newTable
 
+proc toHeaderCase(src: string): string =
+  result = ""
+  for part in src.split('-'):
+    result &= part[0].toUpperAscii() & part[1..part.len - 1] & "-"
+  result = result[0..result.len - 2]
+
 #################################################
 
 proc createServer*(
@@ -130,8 +136,8 @@ proc finalizeResponse(server: AsyncHttpServer, response: Response): void =
 proc createHeaderFields*(header: HttpHeaders): string =
   result = ""
   for k, v in header:
-    result.add(k & ": " & v & "\c\L")
-  result.add("\c\L\c\L")
+    result.add(k.toHeaderCase & ": " & v & "\c\L")
+  result.add("\c\L")
 
 proc status*(response: Response, code: HttpCode): Response {.inline.} =
   result = response
@@ -364,7 +370,6 @@ proc processClient(
   finally:
     server.finalizeRequest(req.mget)
     server.finalizeResponse(res.mget)
-    echo $server.requestPool.len
 
 proc temporarilyUnavailable(client: AsyncSocket) {.async.} =
   await client.send("""HTTP/1.1 503 Service Temporarily Unavailable
