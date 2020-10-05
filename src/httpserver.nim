@@ -130,7 +130,7 @@ proc finalizeResponse(server: AsyncHttpServer, response: Response): void =
 proc createHeaderFields*(header: HttpHeaders): string =
   result = ""
   for k, v in header:
-    result.add(k & ": " & v)
+    result.add(k & ": " & v & "\c\L")
   result.add("\c\L\c\L")
 
 proc status*(response: Response, code: HttpCode): Response {.inline.} =
@@ -421,7 +421,8 @@ when not defined(testing) and isMainModule:
       .send("Hello World")
 
   proc main =
-    var server = createServer(maxHandlers = 100000)
+    let server = createServer(maxHandlers = 100000)
+
     asyncCheck server.serve(cb)
     runForever()
 
