@@ -155,12 +155,15 @@ proc header*(response: Response, header: HttpHeaders): Response {.inline.} =
 proc send*(response: Response, content: string, markAsSent: bool = true): Future[void] {.inline.} =
   if response.sent:
     return newFuture[void]()
+  let date = now().utc.format(timeFormatter)
   var msg = "HTTP/1.1 " & $response.statusCode & "\c\L"
+
+  # echo date, ", ", response.socket.getPeerAddr[0], ", ", msg[0..msg.len - 3]
 
   if content.len > 0:
     response.headers.add("Content-Length", $content.len)
   response.headers.add("Server", "Nim/" & NimVersion)
-  response.headers.add("Date", now().utc.format(timeFormatter))
+  response.headers.add("Date", date)
   msg.add response.headers.createHeaderFields()
   msg.add content
   response.sent = markAsSent
@@ -238,6 +241,8 @@ proc processRequest(
   request.headers.clear()
   request.body = ""
   request.hostname.shallowCopy(address)
+
+  response.sent = false
 
   response.socket = client
 
@@ -367,6 +372,8 @@ proc processClient(
         server, req, res, client, address, callback
       )
       if not retry: break
+  except:
+    echo "an error has occurred: ", getCurrentExceptionMsg()
   finally:
     server.finalizeRequest(req.mget)
     server.finalizeResponse(res.mget)
