@@ -422,8 +422,8 @@ when not defined(testing) and isMainModule:
   proc cb(req: Request, res: Response) {.async, gcsafe.} =
     await res
       .status(Http200)
-      .header("Content-type", "text/plain; charset=utf-8")
-      .send("Hello World")
+      .header("Content-type", "text/html; charset=utf-8")
+      .send("<h1>It works!</h1>")
 
   proc main =
     let server = createServer(maxHandlers = 100000)
