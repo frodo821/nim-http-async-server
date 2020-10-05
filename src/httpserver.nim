@@ -49,7 +49,7 @@ proc `@@`*(this: openArray[(string, seq[string])]): HttpHeaders =
   result = new HttpHeaders
   result.table = this.newTable
 
-proc toHeaderCase(src: string): string =
+proc toHeaderCase(src: string): string {.inline.} =
   result = ""
   for part in src.split('-'):
     result &= part[0].toUpperAscii() & part[1..part.len - 1] & "-"
@@ -133,11 +133,10 @@ proc finalizeResponse(server: AsyncHttpServer, response: Response): void =
   response.socket = nil
   server.responsePool.add response
 
-proc createHeaderFields*(header: HttpHeaders): string =
+proc createHeaderFields*(header: HttpHeaders): string {.inline.} =
   result = ""
   for k, v in header:
     result.add(k.toHeaderCase & ": " & v & "\c\L")
-  result.add("\c\L")
 
 proc status*(response: Response, code: HttpCode): Response {.inline.} =
   result = response
@@ -157,16 +156,20 @@ proc send*(response: Response, content: string, markAsSent: bool = true): Future
     let fut = newFuture[void]()
     fut.complete()
     return fut
-  let date = "Tue, 29 Apr 2014 23:40:08 GMT" # now().utc.format(timeFormatter)
+  let date = now().utc.format(timeFormatter)
+
   var msg = "HTTP/1.1 " & $response.statusCode & "\c\L"
 
   # echo date, ", ", response.socket.getPeerAddr[0], ", ", msg[0..msg.len - 3]
 
-  if content.len > 0:
-    response.headers.add("Content-Length", $content.len)
-  response.headers.add("Server", "Nim/" & NimVersion)
-  response.headers.add("Date", date)
   msg.add response.headers.createHeaderFields()
+
+  if content.len > 0:
+    msg.add "Content-Length: " & $content.len & "\c\L"
+
+  msg.add "Server: Nim/" & NimVersion & "\c\L"
+  msg.add "Date: " & date & "\c\L\c\L"
+
   msg.add content
   response.sent = markAsSent
   result = response.socket.send msg
@@ -435,7 +438,7 @@ when not defined(testing) and isMainModule:
       .send("<h1>It works!</h1>")
 
   proc main =
-    let server = createServer(maxHandlers = 100)
+    let server = createServer(maxHandlers = 1000)
 
     asyncCheck server.serve(cb)
     runForever()
