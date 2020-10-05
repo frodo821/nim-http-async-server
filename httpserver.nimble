@@ -5,7 +5,6 @@ author        = "frodo821"
 description   = "Asynchronous HTTP server library"
 license       = "MIT"
 srcDir        = "src"
-bin          = @["libhttp"]
 
 
 # Dependencies
