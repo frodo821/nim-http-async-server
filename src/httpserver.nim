@@ -110,9 +110,9 @@ proc createServer*(
     result.responsePool.add res
 
 proc newRequest(server: AsyncHttpServer): Request =
-  if server.requestPool.len < 1:
-    return nil
   result = server.requestPool.pop
+  if result.isNil:
+    return nil
   result.initialized = true
 
 proc finalizeRequest(server: AsyncHttpServer, request: Request): void =
@@ -121,9 +121,9 @@ proc finalizeRequest(server: AsyncHttpServer, request: Request): void =
   server.requestPool.add request
 
 proc newResponse(server: AsyncHttpServer): Response =
-  if server.responsePool.len < 1:
-    return nil
   result = server.responsePool.pop
+  if result.isNil:
+    return nil
   result.initialized = true
 
 proc finalizeResponse(server: AsyncHttpServer, response: Response): void =
@@ -157,7 +157,7 @@ proc send*(response: Response, content: string, markAsSent: bool = true): Future
     let fut = newFuture[void]()
     fut.complete()
     return fut
-  let date = now().utc.format(timeFormatter)
+  let date = "Tue, 29 Apr 2014 23:40:08 GMT" # now().utc.format(timeFormatter)
   var msg = "HTTP/1.1 " & $response.statusCode & "\c\L"
 
   # echo date, ", ", response.socket.getPeerAddr[0], ", ", msg[0..msg.len - 3]
@@ -435,7 +435,7 @@ when not defined(testing) and isMainModule:
       .send("<h1>It works!</h1>")
 
   proc main =
-    let server = createServer(maxHandlers = 100000)
+    let server = createServer(maxHandlers = 100)
 
     asyncCheck server.serve(cb)
     runForever()
