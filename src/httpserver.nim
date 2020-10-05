@@ -154,7 +154,9 @@ proc header*(response: Response, header: HttpHeaders): Response {.inline.} =
 
 proc send*(response: Response, content: string, markAsSent: bool = true): Future[void] {.inline.} =
   if response.sent:
-    return newFuture[void]()
+    let fut = newFuture[void]()
+    fut.complete()
+    return fut
   let date = now().utc.format(timeFormatter)
   var msg = "HTTP/1.1 " & $response.statusCode & "\c\L"
 
