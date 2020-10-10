@@ -445,7 +445,7 @@ when not defined(testing) and isMainModule:
       .send("<h1>It works!</h1>")
 
   proc main =
-    let server = createServer(maxHandlers = 10)
+    let server = createServer(maxHandlers = 10000)
 
     asyncCheck server.serve(cb)
     runForever()
