@@ -16,6 +16,7 @@ type
     hostname*: string
     body*: string
     initialized: bool
+    nextRef: Request
 
   Response* = ref object
     initialized: bool
@@ -24,6 +25,7 @@ type
     content: string
     statusCode: HttpCode
     sent: bool
+    nextRef: Response
 
   AsyncHttpServer* = ref object
     port: 1..65535
@@ -32,8 +34,8 @@ type
     reuseAddr: bool
     reusePort: bool
     maxEntitySize: int
-    requestPool: seq[Request]
-    responsePool: seq[Response]
+    requestPool: Request
+    responsePool: Response
     socket: AsyncSocket
 
   RequestLine = tuple
@@ -95,43 +97,53 @@ proc createServer*(
   result.reuseAddr = reuseAddr
   result.reusePort = reusePort
   result.maxEntitySize = maxSize
-  result.requestPool = newSeq[Request](maxHandlers)
-  result.responsePool = newSeq[Response](maxHandlers)
 
   for _ in 0..maxHandlers:
     let req = new Request
     req.initialized = false
     req.headers = newHttpHeaders()
-    result.requestPool.add req
+
+    if not result.requestPool.isNil:
+      req.nextRef = result.requestPool
+
+    result.requestPool = req
 
     let res = new Response
     res.initialized = false
     res.headers = newHttpHeaders()
-    result.responsePool.add res
+
+    if not result.responsePool.isNil:
+      res.nextRef = result.responsePool
+
+    result.responsePool = res
 
 proc newRequest(server: AsyncHttpServer): Request =
-  result = server.requestPool.pop
+  result = server.requestPool
   if result.isNil:
-    return nil
+    return result
   result.initialized = true
+  server.requestPool = result.nextRef
 
 proc finalizeRequest(server: AsyncHttpServer, request: Request): void =
   request.initialized = false
   request.headers.clear
-  server.requestPool.add request
+  request.nextRef = server.requestPool
+  server.requestPool = request
 
 proc newResponse(server: AsyncHttpServer): Response =
-  result = server.responsePool.pop
+  result = server.responsePool
   if result.isNil:
-    return nil
+    return result
   result.initialized = true
+  server.responsePool = result.nextRef
 
 proc finalizeResponse(server: AsyncHttpServer, response: Response): void =
   response.initialized = false
   response.headers.clear
   response.sent = false
   response.socket = nil
-  server.responsePool.add response
+  response.nextRef = server.responsePool
+  server.responsePool = response
 
 proc createHeaderFields*(header: HttpHeaders): string {.inline.} =
   result = ""
@@ -239,9 +251,8 @@ proc processRequest(
   callback: RequestHandler
 ): Future[bool] {.async.} =
 
-  template request(): Request = req.mget()
-
-  template response(): Response = res.mget()
+  let request = req.mget()
+  let response = res.mget()
 
   request.headers.clear()
   request.body = ""
@@ -314,12 +325,11 @@ proc processRequest(
     let (k, v) = parseHeader(lineFut.mget)
     request.headers[k] = v
 
-  if request.reqMethod == HttpPost:
-    if request.headers.hasKey("Expect"):
-      if "100-continue" in request.headers["Expect"]:
-        await response.status(Http100).send("", false)
-      else:
-        await response.status(Http417).send("", false)
+  if request.reqMethod == HttpPost and request.headers.hasKey("Expect"):
+    if "100-continue" in request.headers["Expect"]:
+      await response.status(Http100).send("", false)
+    else:
+      await response.status(Http417).send("", false)
 
   if request.headers.hasKey("Content-Length"):
     var length = 0
@@ -372,11 +382,8 @@ proc processClient(
 ) {.async.} =
 
   try:
-    while not client.isClosed:
-      let retry = await processRequest(
-        server, req, res, client, address, callback
-      )
-      if not retry: break
+    while not client.isClosed and await processRequest(server, req, res, client, address, callback):
+      discard
   except:
     echo "an error has occurred: ", getCurrentExceptionMsg()
   finally:
@@ -406,16 +413,18 @@ proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
 
   while true:
     var (address, client) = await server.socket.acceptAddr()
+    let req = server.newRequest()
+    let res = server.newResponse()
 
-    let request = newFutureVar[Request]()
-    request.complete server.newRequest()
-
-    let response = newFutureVar[Response]()
-    response.complete server.newResponse()
-
-    if request.mget.isNil or response.mget.isNil:
+    if req.isNil or res.isNil:
       asyncCheck client.temporarilyUnavailable
       continue
+
+    let request = newFutureVar[Request]()
+    request.complete req
+
+    let response = newFutureVar[Response]()
+    response.complete res
 
     asyncCheck processClient(
       server,
@@ -427,8 +436,6 @@ proc serve*(server: AsyncHttpServer, callback: RequestHandler) {.async.} =
 
 proc close*(server: AsyncHttpServer) =
   server.socket.close()
-  server.requestPool.setLen(0)
-  server.responsePool.setLen(0)
 
 when not defined(testing) and isMainModule:
   proc cb(req: Request, res: Response) {.async, gcsafe.} =
@@ -438,7 +445,7 @@ when not defined(testing) and isMainModule:
       .send("<h1>It works!</h1>")
 
   proc main =
-    let server = createServer(maxHandlers = 1000)
+    let server = createServer(maxHandlers = 10)
 
     asyncCheck server.serve(cb)
     runForever()
